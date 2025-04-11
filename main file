@@ -1,0 +1,236 @@
+// Full updated Memory Game with sound effects, animations, and custom emoji input
+import { useState, useEffect, useRef } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
+import { Volume2, RefreshCcw, Moon, Sun, Sparkles } from "lucide-react";
+
+const defaultEmojiThemes = {
+  animals: ["🐶", "🐱", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁"],
+  fruits: ["🍎", "🍌", "🍇", "🍉", "🍒", "🍓", "🍍", "🥭"],
+  letters: ["A", "B", "C", "D", "E", "F", "G", "H"]
+};
+
+function shuffle(array) {
+  return [...array, ...array]
+    .sort(() => Math.random() - 0.5)
+    .map((emoji, index) => ({ id: index, emoji, flipped: false, matched: false }));
+}
+
+export default function MemoryGame() {
+  const [difficulty, setDifficulty] = useState("medium");
+  const [theme, setTheme] = useState("animals");
+  const [darkMode, setDarkMode] = useState(false);
+  const [customEmojis, setCustomEmojis] = useState("");
+  const [cards, setCards] = useState([]);
+  const [flipped, setFlipped] = useState([]);
+  const [moves, setMoves] = useState(0);
+  const [time, setTime] = useState(0);
+  const [timerActive, setTimerActive] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [gameWon, setGameWon] = useState(false);
+  const [playerName, setPlayerName] = useState("");
+  const [highScore, setHighScore] = useState(() => {
+    const saved = localStorage.getItem("memory-leaderboard");
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  const flipSound = useRef(null);
+  const matchSound = useRef(null);
+  const wrongSound = useRef(null);
+  const winSound = useRef(null);
+
+  const emojiSource = theme === "custom"
+    ? customEmojis.split("").filter((c) => c.trim() !== "")
+    : defaultEmojiThemes[theme];
+
+  const getEmojiSet = () => {
+    const count = difficulty === "easy" ? 4 : difficulty === "hard" ? 12 : 8;
+    return emojiSource.slice(0, count);
+  };
+
+  useEffect(() => {
+    if (emojiSource.length) {
+      setCards(shuffle(getEmojiSet()));
+    }
+  }, [difficulty, theme, customEmojis]);
+
+  useEffect(() => {
+    let interval;
+    if (timerActive) {
+      interval = setInterval(() => setTime((prev) => prev + 1), 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timerActive]);
+
+  useEffect(() => {
+    if (flipped.length === 2) {
+      setTimeout(() => {
+        const [first, second] = flipped;
+        if (cards[first].emoji === cards[second].emoji) {
+          const newCards = [...cards];
+          newCards[first].matched = true;
+          newCards[second].matched = true;
+          matchSound.current?.play();
+          setCards(newCards);
+        } else {
+          const newCards = [...cards];
+          newCards[first].flipped = false;
+          newCards[second].flipped = false;
+          wrongSound.current?.play();
+          setCards(newCards);
+        }
+        setFlipped([]);
+        setMoves((m) => m + 1);
+      }, 900);
+    }
+  }, [flipped]);
+
+  useEffect(() => {
+    if (cards.length && cards.every((card) => card.matched)) {
+      setTimerActive(false);
+      setGameWon(true);
+      winSound.current?.play();
+    }
+  }, [cards]);
+
+  const saveToLeaderboard = (name) => {
+    const key = `${theme}-${difficulty}`;
+    const current = highScore[key] || [];
+    const updated = [...current, { name, moves, time }]
+      .sort((a, b) => a.time - b.time || a.moves - b.moves)
+      .slice(0, 5);
+    const newScores = { ...highScore, [key]: updated };
+    setHighScore(newScores);
+    localStorage.setItem("memory-leaderboard", JSON.stringify(newScores));
+  };
+
+  const flipCard = (index) => {
+    if (flipped.length === 2 || cards[index].flipped || cards[index].matched) return;
+    const newCards = [...cards];
+    newCards[index].flipped = true;
+    setCards(newCards);
+    setFlipped([...flipped, index]);
+    flipSound.current?.play();
+  };
+
+  const resetGame = (newDiff = difficulty, newTheme = theme) => {
+    setDifficulty(newDiff);
+    setTheme(newTheme);
+    setFlipped([]);
+    setMoves(0);
+    setTime(0);
+    setGameWon(false);
+    setTimerActive(true);
+  };
+
+  const bgClass = darkMode ? "bg-gray-900 text-white" : "bg-green-50 text-black";
+
+  return (
+    <div className={`min-h-screen ${bgClass} flex flex-col items-center justify-center p-4 relative`}>
+      <h1 className="text-3xl font-bold mb-2">🧠 Memory Game</h1>
+
+      <div className="mb-2 flex gap-2 flex-wrap justify-center">
+        {Object.keys(defaultEmojiThemes).map((key) => (
+          <Button key={key} variant={theme === key ? "default" : "outline"} onClick={() => resetGame(difficulty, key)}>
+            {key.charAt(0).toUpperCase() + key.slice(1)}
+          </Button>
+        ))}
+        <Button variant={theme === "custom" ? "default" : "outline"} onClick={() => resetGame(difficulty, "custom")}>Custom</Button>
+      </div>
+
+      {theme === "custom" && (
+        <input
+          value={customEmojis}
+          onChange={(e) => setCustomEmojis(e.target.value)}
+          placeholder="Paste emojis (e.g. 🐸🐼🦊🍕)"
+          className="p-2 border rounded text-black mb-2"
+        />
+      )}
+
+      <div className="mb-4 flex gap-2">
+        {["easy", "medium", "hard"].map((level) => (
+          <Button key={level} variant={difficulty === level ? "default" : "outline"} onClick={() => resetGame(level, theme)}>
+            {level.charAt(0).toUpperCase() + level.slice(1)}
+          </Button>
+        ))}
+      </div>
+
+      <p className="mb-1 text-lg">Moves: {moves}</p>
+      <p className="mb-4 text-lg">Time: {time}s</p>
+
+      <div className={`grid gap-3 w-full max-w-[${difficulty === "easy" ? "xs" : difficulty === "hard" ? "4xl" : "md"}] grid-cols-${difficulty === "easy" ? 2 : difficulty === "hard" ? 6 : 4}`}>
+        {cards.map((card, index) => (
+          <motion.div key={card.id} whileTap={{ scale: 0.95 }}>
+            <Card
+              className={`cursor-pointer aspect-square flex items-center justify-center text-3xl ${card.matched ? "bg-green-200 dark:bg-green-700" : ""}`}
+              onClick={() => flipCard(index)}
+            >
+              <CardContent>
+                {card.flipped || card.matched ? card.emoji : "❓"}
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-4 justify-center">
+        <Button onClick={() => resetGame()} className="flex gap-2 items-center">
+          <RefreshCcw size={16} /> Restart
+        </Button>
+        <Button onClick={() => setIsMuted(!isMuted)} className="flex gap-2 items-center">
+          <Volume2 size={16} /> {isMuted ? "Unmute" : "Mute"}
+        </Button>
+        <Button onClick={() => setDarkMode(!darkMode)} className="flex gap-2 items-center">
+          {darkMode ? <Sun size={16} /> : <Moon size={16} />} {darkMode ? "Light" : "Dark"}
+        </Button>
+      </div>
+
+      {/* SOUND ELEMENTS */}
+      {!isMuted && (
+        <>
+          <audio ref={flipSound} src="/flip.mp3" preload="auto" />
+          <audio ref={matchSound} src="/match.mp3" preload="auto" />
+          <audio ref={wrongSound} src="/wrong.mp3" preload="auto" />
+          <audio ref={winSound} src="/win.mp3" preload="auto" />
+          <audio autoPlay loop src="/background-music.mp3" />
+        </>
+      )}
+
+      {gameWon && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="absolute top-0 left-0 w-full h-full bg-white/90 dark:bg-black/90 flex flex-col items-center justify-center p-6 z-10"
+        >
+          <Sparkles className="text-yellow-400 mb-2" size={48} />
+          <h2 className="text-3xl font-bold mb-4">🎉 You Won!</h2>
+          <p className="text-lg mb-2">Moves: {moves}</p>
+          <p className="text-lg mb-2">Time: {time} seconds</p>
+          <input
+            type="text"
+            placeholder="Enter name"
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            className="p-2 border rounded mb-4 text-black"
+          />
+          <Button onClick={() => { saveToLeaderboard(playerName || "Anonymous"); resetGame(); }} className="text-lg">
+            Save Score & Play Again
+          </Button>
+        </motion.div>
+      )}
+
+      <div className="mt-8 max-w-md w-full">
+        <h3 className="text-xl font-bold mb-2">🏆 Leaderboard ({theme} - {difficulty})</h3>
+        <ul className="space-y-1">
+          {(highScore[`${theme}-${difficulty}`] || []).map((entry, i) => (
+            <li key={i} className="flex justify-between bg-white/70 dark:bg-gray-800 p-2 rounded">
+              <span>{entry.name}</span>
+              <span>{entry.moves} moves / {entry.time}s</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
